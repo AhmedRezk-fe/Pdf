@@ -32,6 +32,8 @@ import java.util.List;
 public final class MainActivity extends Activity {
     private static final int OPEN=101, SAVE=102;
     private File workingFile;
+    private File undoFile;
+    private Button undoButton;
     private int currentPage=0;
     private ImageView preview;
     private TextView status;
@@ -72,6 +74,9 @@ public final class MainActivity extends Activity {
         });
         preview.setOnClickListener(v -> selectAt(tapX,tapY));
         preview.setOnLongClickListener(v -> {selectAt(tapX,tapY);return true;});
+        undoButton=button("↶ تراجع عن آخر تعديل",root);
+        undoButton.setEnabled(false);
+        undoButton.setOnClickListener(v -> undoLastEdit());
         selectionButton=button("تحديد فقرة (عدة سطور)",root);
         selectionButton.setOnClickListener(v -> {
             rangeSelection=!rangeSelection;
@@ -103,7 +108,13 @@ public final class MainActivity extends Activity {
                     byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
                 }
                 try(PDDocument check=PDDocument.load(dest)) {if(check.isEncrypted())throw new Exception("Encrypted PDF");}
-                workingFile=dest; currentPage=0; reopen(); notice("تم فتح الملف محليًا، بدون رفعه لسيرفر");
+                workingFile=dest; currentPage=0;
+                undoFile=new File(getCacheDir(),"undo.pdf");
+                if(undoFile.exists())undoFile.delete();
+                undoButton.setEnabled(false);
+                selectionStart=-1; selectionEnd=-1; rangeSelection=false;
+                selectionButton.setText("تحديد فقرة (عدة سطور)");
+                reopen(); notice("تم فتح الملف محليًا، بدون رفعه لسيرفر");
             } else if(request==SAVE && workingFile!=null){
                 try(FileInputStream in=new FileInputStream(workingFile);java.io.OutputStream out=getContentResolver().openOutputStream(uri)){
                     byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1)out.write(buf,0,n);
@@ -226,6 +237,26 @@ public final class MainActivity extends Activity {
             })
             .setNegativeButton("إلغاء",null).show();
     }
+    private void backupBeforeEdit() throws Exception {
+        undoFile=new File(getCacheDir(),"undo.pdf");
+        java.nio.file.Files.copy(workingFile.toPath(),undoFile.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
+    private void undoLastEdit() {
+        if(undoFile==null || !undoFile.isFile()){notice("لا يوجد تعديل للتراجع عنه");return;}
+        try {
+            closeRenderer();
+            java.nio.file.Files.copy(undoFile.toPath(),workingFile.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            undoFile.delete();
+            undoButton.setEnabled(false);
+            reopen();
+            notice("تم التراجع عن آخر تعديل والعودة للنسخة السابقة");
+        } catch(Exception e) {
+            try{reopen();}catch(Exception ignored){}
+            notice("تعذر التراجع: "+e.getMessage());
+        }
+    }
     private void modifyParagraph(java.util.List<String> lines,java.util.List<String> replacements,String action) {
         if(workingFile==null)return;
         PdfSafeEditor.Result result;
@@ -237,8 +268,10 @@ public final class MainActivity extends Activity {
                     : PdfSafeEditor.alignLines(doc,currentPage,lines,action);
                 if(result.changed) {
                     File tmp=new File(getCacheDir(),"pending.pdf");doc.save(tmp);
+                    backupBeforeEdit();
                     java.nio.file.Files.move(tmp.toPath(),workingFile.toPath(),
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    undoButton.setEnabled(true);
                 }
             }
             reopen();notice(result.message);
@@ -267,7 +300,9 @@ public final class MainActivity extends Activity {
                     PdfSafeEditor.alignSingleLine(doc,currentPage,original,action);
                 if(result.changed){
                     File tmp=new File(getCacheDir(),"pending.pdf");doc.save(tmp);
+                    backupBeforeEdit();
                     java.nio.file.Files.move(tmp.toPath(),workingFile.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    undoButton.setEnabled(true);
                 }
             }
             reopen();
