@@ -63,6 +63,9 @@ export default function App() {
   const [showSignModal, setShowSignModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [saveAsName, setSaveAsName] = useState('');
+  const [showSaveAs, setShowSaveAs] = useState(false);
+  const toastTimeoutRef = useRef(null);
 
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -73,8 +76,9 @@ export default function App() {
   const [dragging, setDragging] = useState(null);
 
   const showToast = (msg) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setStatusMsg(msg);
-    setTimeout(() => setStatusMsg(''), 3200);
+    toastTimeoutRef.current = setTimeout(() => setStatusMsg(''), 6500);
   };
 
   // Load PDF File
@@ -84,6 +88,7 @@ export default function App() {
     const buffer = await file.arrayBuffer();
     const bytes = new Uint8Array(buffer);
     setPdfBytes(bytes);
+    setSaveAsName('');
     setFileName(file.name.replace(/\.pdf$/i, ''));
     setEdits({});
     setCurrentPage(1);
@@ -297,8 +302,26 @@ export default function App() {
   };
 
   const applySmartGroupEdit = () => {
-    showToast('تعديل النص الأصلي يتطلب الحفاظ على الخط والتخطيط. لم يتم تغيير المستند.');
+    if (!editingSmartGroup) return;
+    const group = editingSmartGroup;
+    const width = Math.max(20, group.centerOnPage ? pageViewport.width - 40 : group.width + 8);
+    const x = group.centerOnPage ? 20 : Math.max(0, group.minX - 4);
+    const minimumHeight = Math.max(24, group.newText.split('\\n').length * group.fontSize * 1.4);
+    const height = Math.max(group.height + 8, minimumHeight);
+    // This is an editable visual draft, not a change to embedded source PDF text.
+    // A white background masks the original; never silently claim font preservation.
+    const overlay = {
+      id: 'draft-' + Date.now(), type: 'text', x, y: Math.max(0, group.minY - 4),
+      width: Math.min(width, pageViewport.width - x),
+      height, text: group.newText, fontSize: group.fontSize,
+      color: group.color, bgColor: '#ffffff', align: group.align,
+      isVisualReplacement: true
+    };
+    addPageEdit(currentPage, overlay);
     setEditingSmartGroup(null);
+    setSelectedSmartIds([]);
+    setActiveTool('select');
+    showToast('ظهرت المعاينة على الصفحة. هذه طبقة مرئية فوق الأصل وليست تعديلًا للخط المضمّن. راجعها قبل حفظ نسخة جديدة.');
   };
 
   // Touch / Pointer Dragging for overlays
@@ -537,12 +560,13 @@ export default function App() {
   };
 
   // Export & Save / Share (Supports both Native Android APK & Web)
-  const handleExportPdf = async (shareAfterSave = false) => {
+  const handleExportPdf = async (shareAfterSave = false, chosenName = '') => {
     if (!pdfBytes) return;
     setIsExporting(true);
     try {
       const finalBytes = await generateModifiedPdfBytes();
-      const outName = `${fileName || 'document'}_edited_${Date.now()}.pdf`;
+      const cleanName = String(chosenName || `${fileName || 'document'}_edited_${Date.now()}`).trim().replace(/[\\\\/:*?\"<>|]/g, '_').replace(/\\.pdf$/i, '');
+      const outName = `${cleanName || 'document_edited'}.pdf`;
 
       if (Capacitor.isNativePlatform()) {
         const base64Data = uint8ToBase64(finalBytes);
@@ -559,7 +583,7 @@ export default function App() {
             dialogTitle: 'مشاركة ملف الـ PDF المعدل'
           });
         } else {
-          showToast(`تم الحفظ في Documents: ${outName}`);
+          showToast(`تم حفظ نسخة باسم ${outName} في Documents. راجع الملف الناتج قبل استخدامه.`);
         }
       } else {
         const blob = new Blob([finalBytes], { type: 'application/pdf' });
@@ -610,12 +634,12 @@ export default function App() {
           {pdfBytes && (
             <>
               <button
-                onClick={() => handleExportPdf(false)}
+                onClick={() => {setSaveAsName(`${fileName || 'document'}_edited`);setShowSaveAs(true);}}
                 disabled={isExporting}
                 className="bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition text-[11px] font-bold px-3 py-2 rounded-xl flex items-center gap-1 shadow-lg shadow-indigo-600/30"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>{isExporting ? '...' : 'حفظ'}</span>
+                <span>{isExporting ? '...' : 'حفظ باسم'}</span>
               </button>
               <button
                 onClick={() => handleExportPdf(true)}
@@ -632,7 +656,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {statusMsg && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-xl whitespace-nowrap">
+        <div role="status" aria-live="polite" className="fixed left-4 right-4 bottom-24 z-[100] mx-auto max-w-lg bg-slate-800 border border-indigo-400 text-white text-sm leading-relaxed text-center font-semibold px-4 py-3 rounded-xl shadow-2xl whitespace-normal break-words">
           {statusMsg}
         </div>
       )}
@@ -901,6 +925,27 @@ export default function App() {
             />
           </nav>
         </>
+      )}
+
+      {/* Save As: never overwrite the original document. */}
+      {showSaveAs && (
+        <div className="fixed inset-0 z-[90] bg-black/80 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-slate-900 border border-slate-700 p-5 space-y-4">
+            <h3 className="font-bold text-lg">حفظ نسخة جديدة</h3>
+            <p className="text-sm text-slate-300 leading-relaxed">
+              التعديلات المرئية تُحفظ كطبقات فوق صفحة PDF، ولا تعدّل حروف أو خطوط النص الأصلي. تأكد من المعاينة قبل الاستخدام.
+            </p>
+            <label className="text-xs text-slate-300 block">اسم الملف الجديد</label>
+            <input dir="auto" value={saveAsName} onChange={(e) => setSaveAsName(e.target.value)}
+              className="w-full bg-slate-800 text-white rounded-xl px-3 py-3 border border-slate-600" />
+            <div className="flex gap-2">
+              <button onClick={() => setShowSaveAs(false)} className="flex-1 bg-slate-700 rounded-xl py-3">إلغاء</button>
+              <button onClick={() => {setShowSaveAs(false);handleExportPdf(false,saveAsName);}}
+                disabled={isExporting || !saveAsName.trim()}
+                className="flex-1 bg-indigo-600 rounded-xl py-3 disabled:opacity-40">حفظ PDF</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Smart Group Text Editor Modal (Full Rich Options) */}
