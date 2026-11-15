@@ -159,4 +159,30 @@ public final class PdfSafeEditor {
         page.setContents(newContent);
         return new Result(true, "Line aligned using its existing PDF font and size.");
     }
+    /**
+     * Atomic on-disk group operations: caller only saves the PDDocument if the
+     * entire operation succeeds. No fallback fonts or paragraph reflow.
+     */
+    public static Result alignLines(PDDocument doc, int page, List<String> lines, String alignment) throws IOException {
+        if (lines==null || lines.isEmpty()) return new Result(false, "No lines selected.");
+        for (String line:lines) {
+            Result result=alignSingleLine(doc,page,line,alignment);
+            if(!result.changed) return new Result(false,
+                "Paragraph alignment unavailable: "+result.message+" The PDF was not saved.");
+        }
+        return new Result(true,"Aligned "+lines.size()+" isolated lines using their original fonts. Check the preview.");
+    }
+    public static Result replaceLines(PDDocument doc,int page,List<String> originals,List<String> replacements) throws IOException {
+        if(originals==null || replacements==null || originals.size()!=replacements.size())
+            return new Result(false,"Changing the number of lines requires paragraph reflow, which is not supported safely.");
+        if(originals.isEmpty())return new Result(false,"No lines selected.");
+        for(int i=0;i<originals.size();i++) {
+            if(originals.get(i).equals(replacements.get(i))) continue;
+            Result result=replaceExact(doc,page,originals.get(i),replacements.get(i));
+            if(!result.changed) return new Result(false,
+                "Line "+(i+1)+" not editable with its original font: "+result.message+" No changes saved.");
+        }
+        return new Result(true,"Updated selected lines without substituting fonts; verify layout before exporting.");
+    }
+
 }
