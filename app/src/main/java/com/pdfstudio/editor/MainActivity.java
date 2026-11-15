@@ -193,7 +193,7 @@ public final class MainActivity extends Activity {
     }
     private void showParagraphActions(final java.util.List<String> lines) {
         StringBuilder description=new StringBuilder();
-        for(String text:lines){if(description.length()>0)description.append("\\n");description.append(text);}
+        for(String text:lines){if(description.length()>0)description.append("\n");description.append(text);}
         String[] options={"Edit paragraph","Center","Right","Left","Copy"};
         new AlertDialog.Builder(this)
             .setTitle("تم تحديد "+lines.size()+" سطر")
@@ -214,7 +214,7 @@ public final class MainActivity extends Activity {
         editor.setSingleLine(false);
         editor.setMinLines(Math.max(3,Math.min(8,lines.size())));
         editor.setGravity(Gravity.TOP|Gravity.START);
-        editor.setText(android.text.TextUtils.join("\\n",lines));
+        editor.setText(android.text.TextUtils.join("\n",lines));
         LinearLayout holder=new LinearLayout(this);
         holder.setPadding(32,12,32,12);holder.addView(editor);
         new AlertDialog.Builder(this).setTitle("تعديل الفقرة")
