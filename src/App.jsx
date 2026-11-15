@@ -306,7 +306,7 @@ export default function App() {
     const group = editingSmartGroup;
     const width = Math.max(20, group.centerOnPage ? pageViewport.width - 40 : group.width + 8);
     const x = group.centerOnPage ? 20 : Math.max(0, group.minX - 4);
-    const minimumHeight = Math.max(24, group.newText.split('\\n').length * group.fontSize * 1.4);
+    const minimumHeight = Math.max(24, group.newText.split('\n').length * group.fontSize * 1.4);
     const height = Math.max(group.height + 8, minimumHeight);
     // This is an editable visual draft, not a change to embedded source PDF text.
     // A white background masks the original; never silently claim font preservation.
@@ -551,12 +551,7 @@ export default function App() {
 
   // Convert Uint8Array to Base64 for Capacitor Filesystem
   const uint8ToBase64 = (bytes) => {
-    let binary = '';
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+    return bytesToBase64(bytes);
   };
 
   // Export & Save / Share (Supports both Native Android APK & Web)
@@ -565,7 +560,7 @@ export default function App() {
     setIsExporting(true);
     try {
       const finalBytes = await generateModifiedPdfBytes();
-      const cleanName = String(chosenName || `${fileName || 'document'}_edited_${Date.now()}`).trim().replace(/[\\\\/:*?\"<>|]/g, '_').replace(/\\.pdf$/i, '');
+      const cleanName = String(chosenName || `${fileName || 'document'}_edited_${Date.now()}`).trim().replace(/[\\\\/:*?\"<>|]/g, '_').replace(/\.pdf$/i, '');
       const outName = `${cleanName || 'document_edited'}.pdf`;
 
       if (Capacitor.isNativePlatform()) {
