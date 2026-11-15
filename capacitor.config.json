@@ -1,0 +1,9 @@
+{
+  "appId": "com.pdfstudio.editorpro",
+  "appName": "PDF Studio Pro",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true
+  }
+}
