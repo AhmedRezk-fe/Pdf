@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
+import * as pdfjsLib from 'pdfjs-legacy';
+import pdfWorkerUrl from 'pdfjs-legacy/build/pdf.worker.min.js?url';
 import { PDFDocument, rgb } from 'pdf-lib';
+import PdfiumExperiment from './PdfiumExperiment.jsx';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const NativePdfRenderer = registerPlugin('NativePdfRenderer');
 const bytesToBase64 = (bytes) => {
@@ -44,6 +45,7 @@ const BG_COLORS = [
 
 export default function App() {
   const [pdfBytes, setPdfBytes] = useState(null);
+  const [showPdfiumExperiment, setShowPdfiumExperiment] = useState(false);
   const [fileName, setFileName] = useState('');
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -773,6 +775,15 @@ export default function App() {
             </div>
           )}
 
+          {/* Isolated PDFium editing trial — does not replace stable viewer */}
+          <div className="px-3 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-300">محرر النص الأصلي التجريبي</span>
+            <button type="button" onClick={() => setShowPdfiumExperiment(true)}
+              className="text-xs font-bold bg-indigo-600 px-3 py-2 rounded-xl text-white">
+              تجربة PDFium
+            </button>
+          </div>
+
           {/* Smart Text Multi-Select Action Bar */}
           {activeTool === 'smartText' && (
             <div className="bg-indigo-950/90 border-b border-indigo-500/40 px-3 py-2 flex items-center justify-between gap-2">
@@ -1006,6 +1017,14 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {showPdfiumExperiment && pdfBytes && (
+        <PdfiumExperiment
+          sourceBytes={pdfBytes}
+          fileName={fileName}
+          onClose={() => setShowPdfiumExperiment(false)}
+        />
       )}
 
       {/* Smart Group Text Editor Modal (Full Rich Options) */}
