@@ -47,6 +47,8 @@ export default function App() {
   const [fileName, setFileName] = useState('');
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageJumpInput, setPageJumpInput] = useState('1');
+  const [scrubPage, setScrubPage] = useState(1);
   const [pageViewport, setPageViewport] = useState({ width: 595, height: 842 });
   const [activeTool, setActiveTool] = useState('select'); // select | smartText | addText | whiteout | highlight
   const [detectedItems, setDetectedItems] = useState([]);
@@ -171,6 +173,22 @@ export default function App() {
     renderPage();
     return () => { cancelled = true; };
   }, [pdfBytes, currentPage]);
+
+  useEffect(() => {
+    setPageJumpInput(String(currentPage));
+    setScrubPage(currentPage);
+  }, [currentPage]);
+
+  const goToPage = (input) => {
+    const page = Number(input);
+    if (!Number.isInteger(page) || page < 1 || page > numPages) {
+      showToast(`اكتب رقم صفحة من 1 إلى ${numPages}`);
+      return;
+    }
+    setCurrentPage(page);
+    setSelectedSmartIds([]);
+    setSelectedEditId(null);
+  };
 
   // Add edit helper
   const addPageEdit = (pageNum, editObj) => {
@@ -852,8 +870,53 @@ export default function App() {
               })}
             </div>
 
+            {/* Fast navigation for long documents */}
+            <div className="mt-4 w-full max-w-[520px] bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 space-y-3 shadow-lg">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="pdf-page-jump" className="text-xs font-semibold shrink-0">الانتقال لصفحة</label>
+                <input
+                  id="pdf-page-jump"
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max={Math.max(1, numPages)}
+                  value={pageJumpInput}
+                  onChange={(e) => setPageJumpInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { goToPage(pageJumpInput); e.currentTarget.blur(); } }}
+                  className="w-20 bg-slate-800 border border-slate-700 text-center rounded-xl px-2 py-2 text-sm text-white"
+                />
+                <span className="text-xs text-slate-400 shrink-0">من {numPages}</span>
+                <button
+                  type="button"
+                  onClick={() => goToPage(pageJumpInput)}
+                  className="bg-indigo-600 text-white text-sm font-bold px-4 py-2 rounded-xl"
+                >اذهب</button>
+              </div>
+              <div className="space-y-1">
+                <input
+                  aria-label="شريط التنقل السريع بين صفحات PDF"
+                  type="range"
+                  min="1"
+                  max={Math.max(1, numPages)}
+                  step="1"
+                  value={scrubPage}
+                  disabled={numPages <= 1}
+                  onChange={(e) => setScrubPage(Number(e.target.value))}
+                  onPointerUp={(e) => goToPage(e.currentTarget.value)}
+                  onTouchEnd={(e) => goToPage(e.currentTarget.value)}
+                  onKeyUp={(e) => { if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) goToPage(e.currentTarget.value); }}
+                  className="w-full accent-indigo-500 touch-pan-x"
+                />
+                <div className="flex justify-between text-[11px] text-slate-400">
+                  <span>1</span>
+                  <span>صفحة {scrubPage}</span>
+                  <span>{numPages}</span>
+                </div>
+              </div>
+            </div>
+
             {/* Page Navigation & Page Controls */}
-            <div className="mt-4 mb-24 flex items-center gap-3 bg-slate-900 border border-slate-800 px-4 py-2 rounded-2xl shadow-lg">
+            <div className="mt-3 mb-24 flex items-center gap-3 bg-slate-900 border border-slate-800 px-4 py-2 rounded-2xl shadow-lg">
               <button
                 disabled={currentPage <= 1}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
