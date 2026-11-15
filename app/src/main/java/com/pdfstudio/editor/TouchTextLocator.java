@@ -21,12 +21,13 @@ public final class TouchTextLocator extends PDFTextStripper {
     @Override protected void writeString(String text, List<TextPosition> positions) throws IOException {
         if (positions == null || positions.isEmpty()) return;
         Line current=null;
+        float baseline=Float.NaN;
         for(TextPosition p:positions) {
             String unicode=p.getUnicode();
             if(unicode==null || unicode.length()==0) continue;
             float x=p.getXDirAdj(), y=p.getYDirAdj();
-            if(current==null || Math.abs(y-(current.bottom - 0.2f))>Math.max(4,p.getHeightDir()*1.3f)) {
-                current=new Line();lines.add(current);
+            if(current==null || Math.abs(y-baseline)>Math.max(3,p.getHeightDir()*0.55f)) {
+                current=new Line();lines.add(current);baseline=y;
             }
             current.text+=unicode;
             current.left=Math.min(current.left,x);
