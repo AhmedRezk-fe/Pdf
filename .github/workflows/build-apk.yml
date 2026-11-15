@@ -36,6 +36,16 @@ jobs:
         run: |
           npx cap add android
           npx cap sync android
+      - name: Add native Android PDF renderer plugin
+        run: |
+          mkdir -p android/app/src/main/java/com/pdfstudio/editorpro
+          cp native-android/MainActivity.java android/app/src/main/java/com/pdfstudio/editorpro/MainActivity.java
+          cp native-android/NativePdfRendererPlugin.java android/app/src/main/java/com/pdfstudio/editorpro/NativePdfRendererPlugin.java
+          if [ -f android/app/src/main/java/com/pdfstudio/editorpro/MainActivity.java ]; then
+            echo "Native PDF engine integrated"
+          else
+            exit 1
+          fi
       - name: Build debug APK
         run: |
           cd android
