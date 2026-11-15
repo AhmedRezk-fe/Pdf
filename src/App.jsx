@@ -65,7 +65,7 @@ export default function App() {
   const [selectedEditId, setSelectedEditId] = useState(null);
 
   // Modal states
-  const [editingSmartGroup, setEditingSmartGroup] = useState(null);
+  // Legacy overlay-based smart editor removed. PDFium experiment handles original text.
   const [showSignModal, setShowSignModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
@@ -245,7 +245,7 @@ export default function App() {
         toggleSmartItemSelect(nearest.item);
       } else {
         setSelectedSmartIds([nearest.item.id]);
-        openSmartGroupEditorFor([nearest.item]);
+        setShowPdfiumExperiment(true);
       }
       return;
     }
@@ -799,18 +799,18 @@ export default function App() {
               {selectedSmartIds.length > 0 && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
-                    onClick={deleteSelectedSmartItems}
+                    onClick={() => setShowPdfiumExperiment(true)}
                     className="bg-rose-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    <span>مسح</span>
+                    <span>مسح أصلي (PDFium)</span>
                   </button>
                   <button
-                    onClick={openSmartGroupEditor}
+                    onClick={() => setShowPdfiumExperiment(true)}
                     className="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1"
                   >
                     <CheckSquare className="w-3.5 h-3.5" />
-                    <span>تعديل / سنترة</span>
+                    <span>تعديل أصلي (PDFium)</span>
                   </button>
                 </div>
               )}
@@ -963,9 +963,8 @@ export default function App() {
             <ToolBtn
               active={activeTool === 'smartText'}
               onClick={() => {
-                setActiveTool(activeTool === 'smartText' ? 'select' : 'smartText');
+                setShowPdfiumExperiment(true);
                 setSelectedSmartIds([]);
-                setMultiSelectMode(false);
               }}
               icon={<Type className="w-5 h-5" />}
               label="تحديد نص"
@@ -1025,110 +1024,6 @@ export default function App() {
           fileName={fileName}
           onClose={() => setShowPdfiumExperiment(false)}
         />
-      )}
-
-      {/* Smart Group Text Editor Modal (Full Rich Options) */}
-      {editingSmartGroup && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-base">تعديل وتنسيق النص المحدد</h3>
-              <button onClick={() => setEditingSmartGroup(null)} className="p-1 text-slate-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div>
-              <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800 rounded-lg p-2 mb-3">
-                النص المحدد موجود داخل محتوى PDF. لا يمكننا تغييره بخط مطابق بمجرد الرسم فوقه، لذلك تم تعطيل تطبيق التعديل لحماية المستند. يمكنك نسخ النص أو استخدام أدوات التعليق والإضافة بشكل مستقل.
-              </p>
-              <label className="text-xs text-slate-400 block mb-1">النص (يمكنك التعديل أو الحذف أو إضافة أسطر):</label>
-              <textarea
-                rows={3}
-                dir="auto"
-                value={editingSmartGroup.newText}
-                onChange={(e) => setEditingSmartGroup({ ...editingSmartGroup, newText: e.target.value })}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-white leading-relaxed"
-              />
-            </div>
-
-            {/* Alignment & Font Size */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-400">الحجم:</span>
-                <input
-                  type="number"
-                  value={editingSmartGroup.fontSize}
-                  onChange={(e) => setEditingSmartGroup({ ...editingSmartGroup, fontSize: Number(e.target.value) || 14 })}
-                  className="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-center"
-                />
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setEditingSmartGroup({ ...editingSmartGroup, align: 'right', centerOnPage: false })}
-                  className={`p-2 rounded-lg ${editingSmartGroup.align === 'right' && !editingSmartGroup.centerOnPage ? 'bg-indigo-600' : 'bg-slate-800'}`}
-                ><AlignRight className="w-4 h-4" /></button>
-                <button
-                  onClick={() => setEditingSmartGroup({ ...editingSmartGroup, align: 'center', centerOnPage: true })}
-                  className={`p-2 rounded-lg ${editingSmartGroup.centerOnPage ? 'bg-indigo-600' : 'bg-slate-800'}`}
-                  title="سنترة في منتصف الصفحة"
-                ><AlignCenter className="w-4 h-4" /></button>
-                <button
-                  onClick={() => setEditingSmartGroup({ ...editingSmartGroup, align: 'left', centerOnPage: false })}
-                  className={`p-2 rounded-lg ${editingSmartGroup.align === 'left' && !editingSmartGroup.centerOnPage ? 'bg-indigo-600' : 'bg-slate-800'}`}
-                ><AlignLeft className="w-4 h-4" /></button>
-              </div>
-            </div>
-
-            {/* Text Color Picker */}
-            <div>
-              <span className="text-xs text-slate-400 block mb-1.5">لون الخط:</span>
-              <div className="flex items-center gap-2 flex-wrap">
-                {TEXT_COLORS.map((c) => (
-                  <button
-                    key={c.value}
-                    onClick={() => setEditingSmartGroup({ ...editingSmartGroup, color: c.value })}
-                    style={{ backgroundColor: c.value }}
-                    className={`w-7 h-7 rounded-full border ${
-                      editingSmartGroup.color === c.value ? 'ring-2 ring-indigo-400 border-white scale-110' : 'border-slate-600'
-                    }`}
-                    title={c.name}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Background Color Picker */}
-            <div>
-              <span className="text-xs text-slate-400 block mb-1.5">خلفية النص:</span>
-              <div className="flex items-center gap-2 flex-wrap">
-                {BG_COLORS.map((b) => (
-                  <button
-                    key={b.value}
-                    onClick={() => setEditingSmartGroup({ ...editingSmartGroup, bgColor: b.value })}
-                    style={{ backgroundColor: b.value === 'transparent' ? '#1e293b' : b.value }}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border ${
-                      editingSmartGroup.bgColor === b.value ? 'ring-2 ring-indigo-400 border-white' : 'border-slate-700'
-                    } ${b.value === '#ffffff' || b.value === '#fef08a' || b.value === '#dbeafe' || b.value === '#dcfce7' ? 'text-slate-900' : 'text-white'}`}
-                  >
-                    {b.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 pt-2">
-              <button
-                onClick={applySmartGroupEdit}
-                className="w-full bg-slate-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-1.5"
-              >
-                <Check className="w-4 h-4" />
-                <span>تعديل النص الأصلي غير متاح حاليًا</span>
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Signature Modal */}
