@@ -7,8 +7,8 @@ permissions:
   contents: read
 jobs:
   apk:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,10 +17,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-      - name: Install SDK 35 and Build Tools
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Check Android SDK (preinstalled on GitHub runner)
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
+          ls -la "$ANDROID_HOME"
+          ls -la "$ANDROID_HOME/cmdline-tools" || true
+      - name: Install required Android packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -1)"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
