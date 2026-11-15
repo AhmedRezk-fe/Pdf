@@ -2,7 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import { PDFDocument, rgb } from 'pdf-lib';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+const NativePdfRenderer = registerPlugin('NativePdfRenderer');
+const bytesToBase64 = (bytes) => {
+  let binary = '';
+  for (let i=0;i<bytes.length;i+=16384) {
+    binary += String.fromCharCode(...bytes.subarray(i,i+16384));
+  }
+  return btoa(binary);
+};
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import {
@@ -108,7 +116,22 @@ export default function App() {
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        await page.render({ canvasContext: ctx, viewport }).promise;
+        if (Capacitor.isNativePlatform()) {
+          const result = await NativePdfRenderer.renderPdf({
+            base64: bytesToBase64(pdfBytes),
+            pageIndex: currentPage - 1
+          });
+          const nativeImage = new Image();
+          await new Promise((resolve, reject) => {
+            nativeImage.onload = resolve;
+            nativeImage.onerror = reject;
+            nativeImage.src = 'data:image/png;base64,' + result.pngBase64;
+          });
+          if (cancelled) return;
+          ctx.drawImage(nativeImage, 0, 0, canvas.width, canvas.height);
+        } else {
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        }
 
         // Extract text items for Smart Text Editing
         const textContent = await page.getTextContent();
@@ -270,72 +293,12 @@ export default function App() {
 
   // Delete all selected text blocks immediately
   const deleteSelectedSmartItems = () => {
-    const chosen = detectedItems.filter((it) => selectedSmartIds.includes(it.id));
-    if (chosen.length === 0) return;
-
-    const newEdits = chosen.map((item, idx) => ({
-      id: `${Date.now()}-${idx}`,
-      type: 'whiteout',
-      x: Math.max(0, item.x - 2),
-      y: Math.max(0, item.y - 2),
-      width: item.width + 4,
-      height: item.height + 4,
-      bgColor: '#ffffff'
-    }));
-
-    setEdits((prev) => ({
-      ...prev,
-      [currentPage]: [...(prev[currentPage] || []), ...newEdits]
-    }));
-    setSelectedSmartIds([]);
-    showToast(`تم مسح ${chosen.length} عنصر بنجاح`);
+    showToast('لا يمكن حذف النص الأصلي بأمان من الملف الحالي، ولم يتم تعديل الصفحة.');
   };
 
   const applySmartGroupEdit = () => {
-    if (!editingSmartGroup) return;
-
-    // 1. Cover all original selected blocks cleanly with whiteout
-    const coverEdits = editingSmartGroup.items.map((item, idx) => ({
-      id: `${Date.now()}-cov-${idx}`,
-      type: 'whiteout',
-      x: Math.max(0, item.x - 2),
-      y: Math.max(0, item.y - 2),
-      width: item.width + 4,
-      height: item.height + 4,
-      bgColor: '#ffffff'
-    }));
-
-    // 2. Place the new unified & styled text block
-    const finalWidth = editingSmartGroup.centerOnPage
-      ? pageViewport.width - 60
-      : Math.max(editingSmartGroup.width + 24, 150);
-    const finalX = editingSmartGroup.centerOnPage
-      ? 30
-      : Math.max(10, editingSmartGroup.minX - 10);
-
-    const textEdit = {
-      id: `${Date.now()}-txt`,
-      type: 'text',
-      x: finalX,
-      y: Math.max(0, editingSmartGroup.minY - 2),
-      width: finalWidth,
-      height: Math.max(editingSmartGroup.height + 6, editingSmartGroup.fontSize * 1.5),
-      text: editingSmartGroup.newText,
-      fontSize: editingSmartGroup.fontSize,
-      color: editingSmartGroup.color,
-      align: editingSmartGroup.centerOnPage ? 'center' : editingSmartGroup.align,
-      bgColor: editingSmartGroup.bgColor
-    };
-
-    setEdits((prev) => ({
-      ...prev,
-      [currentPage]: [...(prev[currentPage] || []), ...coverEdits, textEdit]
-    }));
-    setSelectedEditId(textEdit.id);
-    setSelectedSmartIds([]);
+    showToast('تعديل النص الأصلي يتطلب الحفاظ على الخط والتخطيط. لم يتم تغيير المستند.');
     setEditingSmartGroup(null);
-    setActiveTool('select');
-    showToast('تم تعديل وتنسيق النص');
   };
 
   // Touch / Pointer Dragging for overlays
