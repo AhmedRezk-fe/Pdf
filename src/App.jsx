@@ -305,54 +305,6 @@ export default function App() {
     );
   };
 
-  // Open Smart Group Editor for all selected text blocks
-  const openSmartGroupEditor = () => {
-    openSmartGroupEditorFor(detectedItems.filter((it) => selectedSmartIds.includes(it.id)));
-  };
-
-  const openSmartGroupEditorFor = (chosen) => {
-    if (chosen.length === 0) { showToast('حدد كلمة أو سطرًا أولًا'); return; }
-
-    // Sort top-to-bottom, then right-to-left (for Arabic) or left-to-right
-    const sorted = [...chosen].sort((a, b) => {
-      if (Math.abs(a.y - b.y) > 8) return a.y - b.y;
-      return b.x - a.x;
-    });
-
-    const minX = Math.min(...chosen.map((i) => i.x));
-    const minY = Math.min(...chosen.map((i) => i.y));
-    const maxX = Math.max(...chosen.map((i) => i.x + i.width));
-    const maxY = Math.max(...chosen.map((i) => i.y + i.height));
-    const avgFont = Math.round(chosen.reduce((acc, i) => acc + i.fontSize, 0) / chosen.length);
-
-    const combinedText = sorted.map((i) => i.str).join(' ');
-
-    setEditingSmartGroup({
-      items: chosen,
-      minX,
-      minY,
-      width: maxX - minX,
-      height: maxY - minY,
-      newText: combinedText,
-      fontSize: avgFont || 14,
-      color: '#000000',
-      bgColor: '#ffffff',
-      align: 'center',
-      centerOnPage: false
-    });
-  };
-
-  // Delete all selected text blocks immediately
-  const deleteSelectedSmartItems = () => {
-    showToast('لا يمكن حذف النص الأصلي بأمان من الملف الحالي، ولم يتم تعديل الصفحة.');
-  };
-
-  // Never replace existing PDF text by drawing over it.
-  // Real editing requires rewriting the PDF text operators with original font encoding.
-  const applySmartGroupEdit = () => {
-    showToast('تعديل النص الأصلي غير مدعوم بأمان حاليًا. لم يُكتب أي نص فوق الأصل ولم يتغير الملف.');
-  };
-
   // Touch / Pointer Dragging for overlays
   const startDrag = (e, edit, handle = 'move') => {
     e.stopPropagation();
