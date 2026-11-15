@@ -345,27 +345,10 @@ export default function App() {
     showToast('لا يمكن حذف النص الأصلي بأمان من الملف الحالي، ولم يتم تعديل الصفحة.');
   };
 
+  // Never replace existing PDF text by drawing over it.
+  // Real editing requires rewriting the PDF text operators with original font encoding.
   const applySmartGroupEdit = () => {
-    if (!editingSmartGroup) return;
-    const group = editingSmartGroup;
-    const width = Math.max(20, group.centerOnPage ? pageViewport.width - 40 : group.width + 8);
-    const x = group.centerOnPage ? 20 : Math.max(0, group.minX - 4);
-    const minimumHeight = Math.max(24, group.newText.split('\n').length * group.fontSize * 1.4);
-    const height = Math.max(group.height + 8, minimumHeight);
-    // This is an editable visual draft, not a change to embedded source PDF text.
-    // A white background masks the original; never silently claim font preservation.
-    const overlay = {
-      id: 'draft-' + Date.now(), type: 'text', x, y: Math.max(0, group.minY - 4),
-      width: Math.min(width, pageViewport.width - x),
-      height, text: group.newText, fontSize: group.fontSize,
-      color: group.color, bgColor: '#ffffff', align: group.align,
-      isVisualReplacement: true
-    };
-    addPageEdit(currentPage, overlay);
-    setEditingSmartGroup(null);
-    setSelectedSmartIds([]);
-    setActiveTool('select');
-    showToast('ظهرت المعاينة على الصفحة. هذه طبقة مرئية فوق الأصل وليست تعديلًا للخط المضمّن. راجعها قبل حفظ نسخة جديدة.');
+    showToast('تعديل النص الأصلي غير مدعوم بأمان حاليًا. لم يُكتب أي نص فوق الأصل ولم يتغير الملف.');
   };
 
   // Touch / Pointer Dragging for overlays
@@ -542,6 +525,9 @@ export default function App() {
     const pdfDoc = await PDFDocument.load(pdfBytes);
     const pages = pdfDoc.getPages();
 
+    if (Object.values(edits).flat().some((edit) => edit.isVisualReplacement)) {
+      throw new Error('Unsafe visual text replacement detected. Export cancelled.');
+    }
     for (const [pageStr, pageEdits] of Object.entries(edits)) {
       const pIdx = parseInt(pageStr, 10) - 1;
       if (pIdx < 0 || pIdx >= pages.length) continue;
@@ -1034,6 +1020,9 @@ export default function App() {
             </div>
 
             <div>
+              <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800 rounded-lg p-2 mb-3">
+                النص المحدد موجود داخل محتوى PDF. لا يمكننا تغييره بخط مطابق بمجرد الرسم فوقه، لذلك تم تعطيل تطبيق التعديل لحماية المستند. يمكنك نسخ النص أو استخدام أدوات التعليق والإضافة بشكل مستقل.
+              </p>
               <label className="text-xs text-slate-400 block mb-1">النص (يمكنك التعديل أو الحذف أو إضافة أسطر):</label>
               <textarea
                 rows={3}
@@ -1113,10 +1102,10 @@ export default function App() {
             <div className="flex items-center gap-2.5 pt-2">
               <button
                 onClick={applySmartGroupEdit}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30"
+                className="w-full bg-slate-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-1.5"
               >
                 <Check className="w-4 h-4" />
-                <span>تطبيق التعديل على الصفحة</span>
+                <span>تعديل النص الأصلي غير متاح حاليًا</span>
               </button>
             </div>
           </div>
