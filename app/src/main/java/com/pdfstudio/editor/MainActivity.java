@@ -38,6 +38,9 @@ public final class MainActivity extends Activity {
     private String selectedText = null;
     private List<TouchTextLocator.Line> textLines = new java.util.ArrayList<>();
     private float tapX, tapY;
+    private int selectionStart=-1,selectionEnd=-1;
+    private boolean rangeSelection=false;
+    private Button selectionButton;
     private PdfRenderer renderer;
     private ParcelFileDescriptor descriptor;
 
@@ -69,6 +72,13 @@ public final class MainActivity extends Activity {
         });
         preview.setOnClickListener(v -> selectAt(tapX,tapY));
         preview.setOnLongClickListener(v -> {selectAt(tapX,tapY);return true;});
+        selectionButton=button("تحديد فقرة (عدة سطور)",root);
+        selectionButton.setOnClickListener(v -> {
+            rangeSelection=!rangeSelection;
+            selectionStart=-1; selectionEnd=-1;
+            selectionButton.setText(rangeSelection ? "إلغاء تحديد الفقرة" : "تحديد فقرة (عدة سطور)");
+            notice(rangeSelection ? "المس أول سطر في الفقرة ثم المس آخر سطر، حتى لو بينهم 3 أو 4 سطور." : "تم إلغاء تحديد الفقرة");
+        });
         TextView hint=new TextView(this);
         hint.setText("المس سطرًا في الصفحة أو اضغط مطولًا لفتح Copy / Edit / Delete / Center / Left / Right. التعديل غير المدعوم يُرفض بدون تغيير الخط.");
         root.addView(hint);
@@ -138,8 +148,24 @@ public final class MainActivity extends Activity {
             float pdfX=px*page.getWidth()/iw, pdfY=py*page.getHeight()/ih;
             TouchTextLocator.Line line=TouchTextLocator.find(textLines,pdfX,pdfY);
             if(line==null){notice("لا يوجد نص قابل للتحديد هنا. قد تكون الصفحة صورة أو النص غير قابل للاستخراج.");return;}
-            selectedText=line.text;
-            showActions(selectedText);
+            if(rangeSelection) {
+                int index=textLines.indexOf(line);
+                if(selectionStart<0){
+                    selectionStart=index;
+                    notice("تم تحديد أول سطر. المس آخر سطر من الفقرة.");
+                } else {
+                    selectionEnd=index;
+                    rangeSelection=false;
+                    selectionButton.setText("تحديد فقرة (عدة سطور)");
+                    int start=Math.min(selectionStart,selectionEnd),end=Math.max(selectionStart,selectionEnd);
+                    if(end-start>19) {notice("الحد الحالي 20 سطرًا في التحديد الواحد.");return;}
+                    java.util.ArrayList<String> selected=new java.util.ArrayList<>();
+                    for(int i=start;i<=end;i++)selected.add(textLines.get(i).text);
+                    showParagraphActions(selected);
+                }
+            } else {
+                selectedText=line.text; showActions(selectedText);
+            }
         } catch(Exception e) {notice("تعذر تحديد النص: "+e.getMessage());}
     }
     private void showActions(String selected) {
@@ -164,6 +190,62 @@ public final class MainActivity extends Activity {
                     case 5: modify(selected,"","left");break;
                 }
             }).show();
+    }
+    private void showParagraphActions(final java.util.List<String> lines) {
+        StringBuilder description=new StringBuilder();
+        for(String text:lines){if(description.length()>0)description.append("\\n");description.append(text);}
+        String[] options={"Edit paragraph","Center","Right","Left","Copy"};
+        new AlertDialog.Builder(this)
+            .setTitle("تم تحديد "+lines.size()+" سطر")
+            .setMessage(description.toString().length()>450?description.substring(0,450)+"…":description.toString())
+            .setItems(options,(d,index)->{
+                if(index==0)showParagraphEditor(lines);
+                else if(index>=1 && index<=3)modifyParagraph(lines,null,
+                    index==1?"center":index==2?"right":"left");
+                else if(index==4){
+                    ((ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE))
+                        .setPrimaryClip(ClipData.newPlainText("Selected PDF paragraph",description.toString()));
+                    notice("تم نسخ الفقرة");
+                }
+            }).show();
+    }
+    private void showParagraphEditor(final java.util.List<String> lines) {
+        final EditText editor=new EditText(this);
+        editor.setSingleLine(false);
+        editor.setMinLines(Math.max(3,Math.min(8,lines.size())));
+        editor.setGravity(Gravity.TOP|Gravity.START);
+        editor.setText(android.text.TextUtils.join("\\n",lines));
+        LinearLayout holder=new LinearLayout(this);
+        holder.setPadding(32,12,32,12);holder.addView(editor);
+        new AlertDialog.Builder(this).setTitle("تعديل الفقرة")
+            .setMessage("كل سطر يبقى في نفس مكانه وخطه الأصلي. إضافة أو إزالة سطور أو إعادة توزيعها مش مدعوم بعد.")
+            .setView(holder)
+            .setPositiveButton("حفظ",(d,w)->{
+                java.util.List<String> updated=java.util.Arrays.asList(editor.getText().toString().split("\\n",-1));
+                modifyParagraph(lines,updated,"replace");
+            })
+            .setNegativeButton("إلغاء",null).show();
+    }
+    private void modifyParagraph(java.util.List<String> lines,java.util.List<String> replacements,String action) {
+        if(workingFile==null)return;
+        PdfSafeEditor.Result result;
+        try {
+            closeRenderer();
+            try(PDDocument doc=PDDocument.load(workingFile)){
+                result=action.equals("replace")
+                    ? PdfSafeEditor.replaceLines(doc,currentPage,lines,replacements)
+                    : PdfSafeEditor.alignLines(doc,currentPage,lines,action);
+                if(result.changed) {
+                    File tmp=new File(getCacheDir(),"pending.pdf");doc.save(tmp);
+                    java.nio.file.Files.move(tmp.toPath(),workingFile.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            reopen();notice(result.message);
+        }catch(Exception e){
+            try{reopen();}catch(Exception ignored){}
+            notice("لم يتم تعديل الفقرة: "+e.getMessage());
+        }
     }
     private void showEditDialog(String original) {
         EditText editor=new EditText(this);editor.setText(original);editor.setTextSize(18);
