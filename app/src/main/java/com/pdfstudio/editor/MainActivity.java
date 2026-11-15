@@ -1,6 +1,10 @@
 package com.pdfstudio.editor;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.pdf.PdfRenderer;
@@ -8,6 +12,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -22,6 +27,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.util.List;
 
 public final class MainActivity extends Activity {
     private static final int OPEN=101, SAVE=102;
@@ -29,7 +35,9 @@ public final class MainActivity extends Activity {
     private int currentPage=0;
     private ImageView preview;
     private TextView status;
-    private EditText search, replacement;
+    private String selectedText = null;
+    private List<TouchTextLocator.Line> textLines = new java.util.ArrayList<>();
+    private float tapX, tapY;
     private PdfRenderer renderer;
     private ParcelFileDescriptor descriptor;
 
@@ -53,13 +61,17 @@ public final class MainActivity extends Activity {
         status=new TextView(this); status.setText("اختر ملف PDF للبدء. التعديل لا يغيّر الخط الأصلي تلقائيًا."); status.setTextSize(13); root.addView(status);
         ScrollView scroll=new ScrollView(this); root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         preview=new ImageView(this); preview.setAdjustViewBounds(true); scroll.addView(preview);
-        TextView hint=new TextView(this); hint.setText("تعديل آمن للنص الأصلي: اكتب العبارة كما تظهر في الـPDF. يتم رفض التعديل عند عدم دعم الخط الأصلي، بدل استبداله بخط مختلف."); root.addView(hint);
-        search=new EditText(this); search.setSingleLine(true); search.setHint("النص الأصلي (أو السطر كاملًا للمحاذاة)"); root.addView(search);
-        replacement=new EditText(this); replacement.setSingleLine(true); replacement.setHint("النص البديل — اتركه فارغًا للحذف"); root.addView(replacement);
-        Button edit=button("تعديل / حذف النص بنفس الخط",root); edit.setOnClickListener(v -> modify("replace"));
-        LinearLayout aligns=new LinearLayout(this); root.addView(aligns);
-        Button left=button("Left",aligns),center=button("Center",aligns),right=button("Right",aligns);
-        left.setOnClickListener(v -> modify("left")); center.setOnClickListener(v -> modify("center")); right.setOnClickListener(v -> modify("right"));
+        preview.setOnTouchListener((v,event) -> {
+            if(event.getActionMasked()==MotionEvent.ACTION_DOWN){
+                tapX=event.getX();tapY=event.getY();
+            }
+            return false;
+        });
+        preview.setOnClickListener(v -> selectAt(tapX,tapY));
+        preview.setOnLongClickListener(v -> {selectAt(tapX,tapY);return true;});
+        TextView hint=new TextView(this);
+        hint.setText("المس سطرًا في الصفحة أو اضغط مطولًا لفتح Copy / Edit / Delete / Center / Left / Right. التعديل غير المدعوم يُرفض بدون تغيير الخط.");
+        root.addView(hint);
         Button save=button("حفظ نسخة PDF",root); save.setOnClickListener(v -> {
             if(workingFile==null){notice("اختار ملف الأول");return;}
             Intent it=new Intent(Intent.ACTION_CREATE_DOCUMENT);it.setType("application/pdf");it.addCategory(Intent.CATEGORY_OPENABLE);
@@ -107,13 +119,67 @@ public final class MainActivity extends Activity {
             bm.eraseColor(android.graphics.Color.WHITE);
             pg.render(bm,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
             preview.setImageBitmap(bm);
+            try(PDDocument doc=PDDocument.load(workingFile)) {
+                textLines=TouchTextLocator.extract(doc,currentPage);
+            } catch(Exception e) {textLines=new java.util.ArrayList<>();}
+
         }catch(Exception e){notice(e.getMessage());}
     }
-    private void modify(String action){
+    private void selectAt(float x,float y) {
+        if(renderer==null || preview.getDrawable()==null)return;
+        float iw=preview.getDrawable().getIntrinsicWidth();
+        float ih=preview.getDrawable().getIntrinsicHeight();
+        float scale=Math.min((float)preview.getWidth()/iw,(float)preview.getHeight()/ih);
+        float left=(preview.getWidth()-iw*scale)/2f;
+        float top=(preview.getHeight()-ih*scale)/2f;
+        float px=(x-left)/scale, py=(y-top)/scale;
+        if(px<0 || py<0 || px>iw || py>ih) return;
+        try(PdfRenderer.Page page=renderer.openPage(currentPage)) {
+            float pdfX=px*page.getWidth()/iw, pdfY=py*page.getHeight()/ih;
+            TouchTextLocator.Line line=TouchTextLocator.find(textLines,pdfX,pdfY);
+            if(line==null){notice("لا يوجد نص قابل للتحديد هنا. قد تكون الصفحة صورة أو النص غير قابل للاستخراج.");return;}
+            selectedText=line.text;
+            showActions(selectedText);
+        } catch(Exception e) {notice("تعذر تحديد النص: "+e.getMessage());}
+    }
+    private void showActions(String selected) {
+        final String[] actions={"Copy","Edit","Delete","Center","Right","Left"};
+        new AlertDialog.Builder(this)
+            .setTitle(selected.length()>110 ? selected.substring(0,110)+"…" : selected)
+            .setItems(actions,(dialog,which) -> {
+                switch(which){
+                    case 0:
+                        ((ClipboardManager)getSystemService(Context.CLIPBOARD_SERVICE))
+                            .setPrimaryClip(ClipData.newPlainText("PDF text",selected));
+                        notice("تم نسخ النص");break;
+                    case 1: showEditDialog(selected);break;
+                    case 2:
+                        new AlertDialog.Builder(this).setTitle("حذف النص المحدد؟")
+                            .setMessage("سيتم حذف النص فقط إذا أمكن الحفاظ على بقية المحتوى والخط الأصلي.")
+                            .setPositiveButton("حذف",(d,w)->modify(selected,"","replace"))
+                            .setNegativeButton("إلغاء",null).show();
+                        break;
+                    case 3: modify(selected,"","center");break;
+                    case 4: modify(selected,"","right");break;
+                    case 5: modify(selected,"","left");break;
+                }
+            }).show();
+    }
+    private void showEditDialog(String original) {
+        EditText editor=new EditText(this);editor.setText(original);editor.setTextSize(18);
+        editor.setMinLines(2); editor.setSelectAllOnFocus(false);
+        LinearLayout holder=new LinearLayout(this);holder.setPadding(36,12,36,12);holder.addView(editor);
+        new AlertDialog.Builder(this).setTitle("Edit — تعديل النص بنفس الخط")
+            .setView(holder)
+            .setPositiveButton("حفظ التعديل",(d,w)->modify(original,editor.getText().toString(),"replace"))
+            .setNegativeButton("إلغاء",null).show();
+    }
+    private void modify(String original,String next,String action){
         if(workingFile==null){notice("اختار ملف PDF الأول");return;}
-        String original=search.getText().toString(), next=replacement.getText().toString();
         try {
             PdfSafeEditor.Result result;
+            // Close the rendering file handle before writing a replacement.
+            closeRenderer();
             try(PDDocument doc=PDDocument.load(workingFile)){
                 result=action.equals("replace")?PdfSafeEditor.replaceExact(doc,currentPage,original,next):
                     PdfSafeEditor.alignSingleLine(doc,currentPage,original,action);
@@ -122,9 +188,12 @@ public final class MainActivity extends Activity {
                     java.nio.file.Files.move(tmp.toPath(),workingFile.toPath(),java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 }
             }
-            if(result.changed)reopen();
+            reopen();
             notice(result.message);
-        }catch(Exception e){notice("لم يتم التعديل: "+e.getMessage());}
+        }catch(Exception e){
+            try{reopen();}catch(Exception ignored){}
+            notice("لم يتم التعديل: "+e.getMessage());
+        }
     }
     @Override protected void onDestroy(){closeRenderer();super.onDestroy();}
 }
