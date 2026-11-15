@@ -49,6 +49,8 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageJumpInput, setPageJumpInput] = useState('1');
   const [scrubPage, setScrubPage] = useState(1);
+  const [showQuickJump, setShowQuickJump] = useState(false);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
   const [pageViewport, setPageViewport] = useState({ width: 595, height: 842 });
   const [activeTool, setActiveTool] = useState('select'); // select | smartText | addText | whiteout | highlight
   const [detectedItems, setDetectedItems] = useState([]);
@@ -225,6 +227,27 @@ export default function App() {
     const x = (e.clientX - rect.left) * scaleX;
     const y = (e.clientY - rect.top) * scaleY;
 
+    if (activeTool === 'smartText') {
+      // Match against PDF.js extracted bounding boxes in PDF-point coordinates.
+      // The canvas's native pixels are scaled, so use the outer container rect.
+      const nearest = detectedItems.map((item) => {
+        const dx = Math.max(item.x - x, 0, x - (item.x + item.width));
+        const dy = Math.max(item.y - y, 0, y - (item.y + item.height));
+        return { item, distance: Math.hypot(dx, dy) };
+      }).sort((a,b) => a.distance - b.distance)[0];
+      if (!nearest || nearest.distance > 16) {
+        showToast('لم أجد نصًا في موضع اللمس. جرّب الضغط قرب منتصف الكلمة أو سطر آخر.');
+        return;
+      }
+      if (multiSelectMode) {
+        toggleSmartItemSelect(nearest.item);
+      } else {
+        setSelectedSmartIds([nearest.item.id]);
+        openSmartGroupEditorFor([nearest.item]);
+      }
+      return;
+    }
+
     if (activeTool === 'addText') {
       const newEdit = {
         id: Date.now().toString(),
@@ -272,7 +295,7 @@ export default function App() {
 
   // Toggle selection of one or multiple text blocks on the PDF
   const toggleSmartItemSelect = (item, e) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
     setSelectedSmartIds((prev) =>
       prev.includes(item.id)
         ? prev.filter((id) => id !== item.id)
@@ -282,8 +305,11 @@ export default function App() {
 
   // Open Smart Group Editor for all selected text blocks
   const openSmartGroupEditor = () => {
-    const chosen = detectedItems.filter((it) => selectedSmartIds.includes(it.id));
-    if (chosen.length === 0) return;
+    openSmartGroupEditorFor(detectedItems.filter((it) => selectedSmartIds.includes(it.id)));
+  };
+
+  const openSmartGroupEditorFor = (chosen) => {
+    if (chosen.length === 0) { showToast('حدد كلمة أو سطرًا أولًا'); return; }
 
     // Sort top-to-bottom, then right-to-left (for Arabic) or left-to-right
     const sorted = [...chosen].sort((a, b) => {
@@ -766,9 +792,13 @@ export default function App() {
             <div className="bg-indigo-950/90 border-b border-indigo-500/40 px-3 py-2 flex items-center justify-between gap-2">
               <span className="text-[11px] text-indigo-200 font-semibold">
                 {selectedSmartIds.length === 0
-                  ? 'المس كلمة أو عدة كلمات/سطور لتحديدها'
+                  ? 'المس أي كلمة لفتح المحرر'
                   : `تم تحديد ${selectedSmartIds.length} عنصر`}
               </span>
+              <button onClick={() => {setMultiSelectMode(v=>!v);setSelectedSmartIds([]);}}
+                className={`text-[11px] px-2 py-1 rounded-lg shrink-0 ${multiSelectMode?'bg-emerald-600':'bg-slate-800'}`}>
+                {multiSelectMode?'تحديد متعدد ✓':'تحديد متعدد'}
+              </button>
               {selectedSmartIds.length > 0 && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
@@ -818,7 +848,7 @@ export default function App() {
                         width: `${(item.width / pageViewport.width) * 100}%`,
                         height: `${(item.height / pageViewport.height) * 100}%`
                       }}
-                      className={`absolute cursor-pointer rounded-[2px] transition ${
+                      className={`absolute pointer-events-none rounded-[2px] transition ${
                         isPicked
                           ? 'border-2 border-emerald-500 bg-emerald-500/30 z-20'
                           : 'border border-indigo-500/60 bg-indigo-500/10 hover:bg-indigo-500/25 z-10'
@@ -870,49 +900,34 @@ export default function App() {
               })}
             </div>
 
-            {/* Fast navigation for long documents */}
-            <div className="mt-4 w-full max-w-[520px] bg-slate-900 border border-slate-800 rounded-2xl px-4 py-3 space-y-3 shadow-lg">
-              <div className="flex items-center justify-between gap-3">
-                <label htmlFor="pdf-page-jump" className="text-xs font-semibold shrink-0">الانتقال لصفحة</label>
-                <input
-                  id="pdf-page-jump"
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max={Math.max(1, numPages)}
-                  value={pageJumpInput}
-                  onChange={(e) => setPageJumpInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { goToPage(pageJumpInput); e.currentTarget.blur(); } }}
-                  className="w-20 bg-slate-800 border border-slate-700 text-center rounded-xl px-2 py-2 text-sm text-white"
-                />
-                <span className="text-xs text-slate-400 shrink-0">من {numPages}</span>
-                <button
-                  type="button"
-                  onClick={() => goToPage(pageJumpInput)}
-                  className="bg-indigo-600 text-white text-sm font-bold px-4 py-2 rounded-xl"
-                >اذهب</button>
+            {/* Compact page navigation — expanded only on demand */}
+            <div className="mt-2 w-full max-w-[520px] bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <button type="button" onClick={() => setShowQuickJump(v => !v)}
+                  aria-expanded={showQuickJump}
+                  className="px-3 py-1.5 text-xs font-semibold text-indigo-200 rounded-lg bg-slate-800">
+                  {showQuickJump ? 'إخفاء التنقل' : 'انتقال سريع'}
+                </button>
+                <span className="text-xs text-slate-300">صفحة {currentPage} / {numPages}</span>
               </div>
-              <div className="space-y-1">
-                <input
-                  aria-label="شريط التنقل السريع بين صفحات PDF"
-                  type="range"
-                  min="1"
-                  max={Math.max(1, numPages)}
-                  step="1"
-                  value={scrubPage}
-                  disabled={numPages <= 1}
-                  onChange={(e) => setScrubPage(Number(e.target.value))}
-                  onPointerUp={(e) => goToPage(e.currentTarget.value)}
-                  onTouchEnd={(e) => goToPage(e.currentTarget.value)}
-                  onKeyUp={(e) => { if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(e.key)) goToPage(e.currentTarget.value); }}
-                  className="w-full accent-indigo-500 touch-pan-x"
-                />
-                <div className="flex justify-between text-[11px] text-slate-400">
-                  <span>1</span>
-                  <span>صفحة {scrubPage}</span>
-                  <span>{numPages}</span>
+              {showQuickJump && (
+                <div className="flex items-center gap-2 pt-2 pb-1">
+                  <input aria-label="رقم الصفحة" type="number" inputMode="numeric" min="1"
+                    max={Math.max(1,numPages)} value={pageJumpInput}
+                    onChange={(e)=>setPageJumpInput(e.target.value)}
+                    onKeyDown={(e)=>{if(e.key==='Enter'){goToPage(pageJumpInput);e.currentTarget.blur();}}}
+                    className="w-14 shrink-0 bg-slate-800 border border-slate-700 rounded-lg text-center text-sm py-1.5"/>
+                  <button type="button" onClick={()=>goToPage(pageJumpInput)}
+                    className="bg-indigo-600 text-white text-xs rounded-lg px-2 py-1.5">اذهب</button>
+                  <input type="range" aria-label="سحب بين الصفحات" min="1"
+                    max={Math.max(1,numPages)} step="1" value={scrubPage}
+                    onChange={(e)=>setScrubPage(Number(e.target.value))}
+                    onPointerUp={(e)=>goToPage(e.currentTarget.value)}
+                    onTouchEnd={(e)=>goToPage(e.currentTarget.value)}
+                    className="flex-1 min-w-0 accent-indigo-500"/>
+                  <span className="text-xs text-slate-300 w-7 text-center">{scrubPage}</span>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Page Navigation & Page Controls */}
@@ -953,6 +968,7 @@ export default function App() {
               onClick={() => {
                 setActiveTool(activeTool === 'smartText' ? 'select' : 'smartText');
                 setSelectedSmartIds([]);
+                setMultiSelectMode(false);
               }}
               icon={<Type className="w-5 h-5" />}
               label="تحديد نص"
